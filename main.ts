@@ -2,7 +2,7 @@ namespace deploii{
 
     //% blockId=deploii-loop
     //% block="deploii loop"
-    export function loop():void {
+    export function loop() : void {
         return;
     }
 
