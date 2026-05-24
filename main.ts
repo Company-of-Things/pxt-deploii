@@ -21,7 +21,6 @@ namespace deploii{
     //% blockId=deploii-interval
     //% t.min=1 t.defl=1000
     //% f.shadow=functions
-    //% f.defl=() => {}
     export function interval(t: number, f: () => void) : void {
         return;
     }
