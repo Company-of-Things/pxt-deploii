@@ -1,7 +1,7 @@
 {
-    "name": "pxt-deploii",
+    "name": "deploii",
     "version": "0.0.0",
-    "description": "",
+    "description": "An extension for connecting to the deploii cloud service",
     "dependencies": {
         "core": "*",
         "radio": "*",
