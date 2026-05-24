@@ -19,8 +19,9 @@ namespace deploii{
     }
 
     //% blockid=deploii-interval
-    //% block="do $f every $t ms"
+    //% block="every $t ms, do $f"
     export function interval(f:()=>void, t:number) : void {
+        f();
         return;
     }
 
