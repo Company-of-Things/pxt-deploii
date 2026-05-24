@@ -5,11 +5,11 @@
 
 namespace deploii{
 
-    function connect(ssid: string, password: string) : void {
+    export function connect(ssid: string, password: string) : void {
 
     }
 
-    function send(dataID: string, data: any) : void {
+    export function send(dataID: string, data: any) : void {
         
     }
 
