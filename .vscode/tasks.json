@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "make build",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$gcc", "$tsc"]
+        },
+        {
+            "label": "deploy",
+            "type": "shell",
+            "command": "make deploy",
+            "problemMatcher": ["$gcc", "$tsc"]
+        },
+        {
+            "label": "rebuild",
+            "type": "shell",
+            "command": "make rebuild",
+            "problemMatcher": ["$gcc", "$tsc"]
+        },
+        {
+            "label": "monitor",
+            "type": "shell",
+            "command": "make monitor",
+            "problemMatcher": []
+        }
+    ]
+}

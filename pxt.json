@@ -1,0 +1,45 @@
+{
+    "name": "deploii",
+    "version": "0.0.1",
+    "description": "Connect your micro:bit to Deploii (deploii.no) over Bluetooth",
+    "license": "MIT",
+    "dependencies": {
+        "core": "*",
+        "bluetooth": "*",
+        "microphone": "*"
+    },
+    "files": [
+        "README.md",
+        "main.ts",
+        "shims.d.ts",
+        "enums.d.ts",
+        "deploii_config.h",
+        "deploii_hash.h",
+        "deploii_hash.cpp",
+        "deploii_service.h",
+        "deploii_service.cpp",
+        "deploii.cpp"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "supportedTargets": [
+        "microbit"
+    ],
+    "preferredEditor": "blocksprj",
+    "disablesVariants": [
+        "mbdal"
+    ],
+    "yotta": {
+        "config": {
+            "microbit-dal": {
+                "bluetooth": {
+                    "enabled": 1,
+                    "open": 1,
+                    "whitelist": 0,
+                    "security_level": null
+                }
+            }
+        }
+    }
+}

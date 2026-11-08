@@ -1,0 +1,17 @@
+{
+    "name": "pxt-deploii",
+    "private": true,
+    "description": "Dev tooling for the Deploii micro:bit extension. Not used by MakeCode itself.",
+    "engines": {
+        "node": ">=24"
+    },
+    "scripts": {
+        "postinstall": "node -e \"require('fs').writeFileSync('node_modules/pxtcli.json', JSON.stringify({targetdir: 'pxt-microbit'}, null, 4))\"",
+        "build": "make build",
+        "deploy": "make deploy"
+    },
+    "devDependencies": {
+        "pxt": "^0.5.1",
+        "pxt-microbit": "~9.1.2"
+    }
+}

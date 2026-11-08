@@ -1,0 +1,29 @@
+{
+    "version": 4,
+    "configurations": [
+        {
+            "name": "micro:bit V2 (CODAL)",
+            "compilerPath": "arm-none-eabi-g++",
+            "cStandard": "c99",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "gcc-arm",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/built/codal/pxtapp/**",
+                "${workspaceFolder}/built/codal/libraries/**",
+                "${workspaceFolder}/built/codal/build/**",
+                "${workspaceFolder}/built/codal/utils/cmake/toolchains/ARM_GCC"
+            ],
+            "defines": [
+                "MICROBIT_CODAL=1",
+                "DEVICE_BLE=1",
+                "YOTTA_CFG_MICROBIT_DAL_BLUETOOTH_ENABLED=1",
+                "YOTTA_CFG_MICROBIT_DAL_BLUETOOTH_OPEN=1",
+                "YOTTA_CFG_MICROBIT_DAL_BLUETOOTH_WHITELIST=0",
+                "NRF52833_XXAA",
+                "S113",
+                "SOFTDEVICE_PRESENT"
+            ]
+        }
+    ]
+}
