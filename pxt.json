@@ -18,6 +18,10 @@
         "deploii_hash.cpp",
         "deploii_service.h",
         "deploii_service.cpp",
+        "cmp.h",
+        "cmp.c",
+        "deploii_decode.h",
+        "deploii_decode.cpp",
         "deploii.cpp"
     ],
     "testFiles": [

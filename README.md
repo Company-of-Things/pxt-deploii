@@ -31,9 +31,11 @@ In VS Code, `Ctrl+Shift+B` runs `make build`; C++ IntelliSense works after the f
 | File | Purpose |
 |------|---------|
 | `pxt.json` | Extension manifest. Enables Bluetooth with "no pairing required", disables the micro:bit V1 build |
-| `main.ts` | Blocks and TypeScript API (`deploii.connect`), with a simulator stub |
-| `deploii.cpp` | C++ shim for `deploii.connect`: hash board ID, create service, advertise |
-| `deploii_service.h/.cpp` | `DeploiiService`, the GATT service (CODAL `MicroBitBLEService`), advertising and packet sending |
+| `main.ts` | Blocks and TypeScript API (`connect`, `send`, `onReceive`), MessagePack encoding, simulator stubs |
+| `deploii.cpp` | C++ shims: `connect`, `sendRaw`, `onDataReceived`, `receiveMessage` |
+| `deploii_service.h/.cpp` | `DeploiiService`, the GATT service (CODAL `MicroBitBLEService`): advertising, packet sending, receive queue, BLE long writes |
+| `deploii_decode.h/.cpp` | Decodes received MessagePack into TypeScript values, using CMP |
+| `cmp.c`, `cmp.h` | [CMP](https://github.com/camgunz/cmp) MessagePack library (MIT, vendored unchanged) |
 | `deploii_hash.h/.cpp` | `deploii_hash()`, **to implement** |
 | `deploii_config.h` | UUIDs, sizes, error codes, debug switch |
 | `test.ts` | Test program, only built when building the extension itself |
@@ -73,9 +75,46 @@ It returns `0` on success or a negative code:
 
 For the raw nRF error code, set `DEPLOII_DEBUG` to `1` in `deploii_config.h` and run `make monitor`.
 
-`DeploiiService::send()` already sends with the Arduino packet format (first byte = packets remaining
-after this one), and writes from Deploii raise event `DEPLOII_ID` / `DEPLOII_EVT_DATA_RECEIVED`.
-Neither is exposed as a block yet.
+## Sending
+
+`deploii.send(id, value)` sends any value to a datastream, like the Arduino library's templated
+`send()`. `main.ts` encodes it as MessagePack, the same map with one entry the Arduino sends:
+`{ "<datastream id>": value }`.
+
+| TypeScript value | MessagePack |
+|------------------|-------------|
+| whole number (int32 range) | fixint / int 32 |
+| other number | float 32 (like an Arduino `float`) |
+| text | str |
+| true / false | bool |
+| null / undefined | nil |
+| list (can be nested) | array |
+| anything else | its text form, as str |
+
+`sendRaw()` (C++) then splits the bytes into packets in the Arduino format (first byte = packets
+remaining after this one). `send` returns `0` or `-9` (not connected/subscribed yet), `-10` (more than
+256 packets) or `-11` (sending failed).
+
+## Receiving
+
+`deploii.onReceive((moduleId, data) => ...)` works like the Arduino library's `receive(cb)`: the handler
+runs for every message of type `"module_data"`, with its module ID and data.
+
+1. Deploii writes one MessagePack message to the receive characteristic, with no header byte, as on the
+   Arduino. Writes longer than 20 bytes arrive as BLE long writes (prepared writes). `DeploiiService`
+   handles these by giving the SoftDevice a buffer for them (`BLE_EVT_USER_MEM_REQUEST`).
+2. Each complete message goes into a queue (`DEPLOII_RX_QUEUE_SIZE`, default 4), and an event is raised.
+3. For each event, TypeScript calls `receiveMessage()`. C++ decodes the oldest message with CMP into
+   `[moduleId, data, cardId, type, protocol]` (`deploii.MessageField`).
+4. `onReceive` passes messages with `type == "module_data"` to your handler.
+
+Fields are matched by key name (`moduleId`, `data`, `cardId`, `type`, `protocol`). A key with another
+name falls back to its position, which is how the Arduino library decodes (it ignores key names).
+`data` can be any type: text, number, boolean, `null`, a list, or a Buffer. A nested map becomes a list
+`[key, value, key, value, ...]`.
+
+To see every message, including ones that aren't `module_data`, use the advanced
+`deploii.onDataReceived(() => { const msg = deploii.receiveMessage() ... })`.
 
 ## Things to know
 
@@ -84,14 +123,17 @@ Neither is exposed as a block yet.
 - **Packet size.** CODAL v2 uses the default BLE MTU of 23 bytes, so one notification holds at most
   20 bytes. `send()` therefore uses 20-byte packets (`DEPLOII_BLE_PACKET_SIZE`) instead of the Arduino's
   128. The header byte lets Deploii reassemble either size, but check that the web client doesn't assume
-  128-byte packets. Writes *to* the micro:bit longer than 20 bytes also need a bigger MTU. Raising the
-  MTU means overriding `NRF_SDH_BLE_GATT_MAX_MTU_SIZE` (for example in `pxt.json` → `yotta.config`) and
-  making sure the SoftDevice still fits in RAM. Test that on hardware before relying on it.
+  128-byte packets. Writes *to* the micro:bit don't need a bigger MTU: longer writes are handled as
+  BLE long writes. Raising the MTU would mean overriding `NRF_SDH_BLE_GATT_MAX_MTU_SIZE` (for example in
+  `pxt.json` → `yotta.config`) and making sure the SoftDevice still fits in RAM.
+- **Received messages are at most 128 bytes** (`DEPLOII_BLE_BUFFER_MAX_SIZE`), as on the Arduino. If
+  messages arrive faster than the handler runs, up to 4 are queued and the rest are dropped.
 - **Bluetooth and radio can't be used together.** Bluetooth replaces the `radio` extension. MakeCode
   offers to remove radio when you add this extension.
 - **No pairing.** `pxt.json` sets `open: 1`, so Deploii (Web Bluetooth) can connect without pairing,
   like the Arduino.
-- **Simulator.** `connect` returns 0 in the simulator. Bluetooth only works on hardware.
+- **Simulator.** `connect` and `send` return 0 in the simulator and nothing is ever received.
+  Bluetooth only works on hardware.
 
 ## Testing without Deploii
 

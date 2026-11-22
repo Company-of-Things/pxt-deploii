@@ -30,6 +30,28 @@
 #define DEPLOII_ID 9620
 #define DEPLOII_EVT_DATA_RECEIVED 1
 
+// Number of received messages buffered until the TypeScript handler has processed them.
+// Messages arriving while the queue is full are dropped.
+#ifndef DEPLOII_RX_QUEUE_SIZE
+#define DEPLOII_RX_QUEUE_SIZE 4
+#endif
+
+// Memory handed to the SoftDevice for BLE "long writes" (queued/prepared writes).
+// Needed because a write from Deploii (up to 128 bytes) is longer than one ATT packet
+// (20 bytes at the default MTU). Each 18-byte chunk takes 6 bytes of overhead.
+#define DEPLOII_QUEUED_WRITE_MEM_SIZE 512
+
+// How deep nested lists/maps in received data are decoded (deeper levels become undefined)
+#define DEPLOII_DECODE_MAX_DEPTH 4
+
+// Fields of a decoded message, same order as the Arduino library's msgStruct
+#define DEPLOII_MSG_MODULE_ID 0
+#define DEPLOII_MSG_DATA      1
+#define DEPLOII_MSG_CARD_ID   2
+#define DEPLOII_MSG_TYPE      3
+#define DEPLOII_MSG_PROTOCOL  4
+#define DEPLOII_MSG_FIELD_COUNT 5
+
 // Set to 1 to print debug messages on the USB serial port (115200 baud)
 #ifndef DEPLOII_DEBUG
 #define DEPLOII_DEBUG 0

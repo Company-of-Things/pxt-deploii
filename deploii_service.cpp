@@ -13,12 +13,17 @@ static uint8_t advData[BLE_GAP_ADV_SET_DATA_SIZE_MAX];
 static uint8_t scanRspData[BLE_GAP_ADV_SET_DATA_SIZE_MAX];
 static ble_uuid_t advUuid;
 
+// Memory the SoftDevice stores prepared writes in during a long write
+static uint8_t queuedWriteMem[DEPLOII_QUEUED_WRITE_MEM_SIZE];
+static ble_user_mem_block_t queuedWriteBlock = {queuedWriteMem, sizeof(queuedWriteMem)};
+
 DeploiiService::DeploiiService()
-    : receiveLength(0), serviceUUID(0), serviceAdded(false), ready(false), advertising(false),
-      nrfError(0)
+    : rxHead(0), rxCount(0), rxDropped(0),
+      serviceUUID(0), serviceAdded(false), ready(false), advertising(false), nrfError(0)
 {
     memset(sendBuffer, 0, sizeof(sendBuffer));
     memset(receiveBuffer, 0, sizeof(receiveBuffer));
+    memset(rxLength, 0, sizeof(rxLength));
 }
 
 int DeploiiService::begin(uint16_t uuid)
@@ -208,11 +213,131 @@ void DeploiiService::onDataWritten(const microbit_ble_evt_write_t *params)
     if (params->handle != valueHandle(IDX_RECEIVE))
         return;
 
-    // The SoftDevice has already written the value into receiveBuffer
-    receiveLength = params->len < sizeof(receiveBuffer) ? params->len : sizeof(receiveBuffer);
+    // A plain write holds the whole message, like on the Arduino (no header byte).
+    // Long writes arrive as BLE_GATTS_OP_EXEC_WRITE_REQ_NOW and are handled in onExecuteWrite().
+    if ((params->op == BLE_GATTS_OP_WRITE_REQ || params->op == BLE_GATTS_OP_WRITE_CMD) && params->offset == 0)
+        queueMessage(params->data, params->len);
+}
 
-    DEPLOII_LOG("[deploii] received %d bytes\r\n", (int)receiveLength);
+bool DeploiiService::onBleEvent(const microbit_ble_evt_t *p_ble_evt)
+{
+    switch (p_ble_evt->header.evt_id)
+    {
+    case BLE_EVT_USER_MEM_REQUEST:
+        // The peer started a long write. Lend the SoftDevice memory for the prepared writes;
+        // without a reply the write would stall. No other CODAL service answers this event.
+        if (p_ble_evt->evt.common_evt.params.user_mem_request.type == BLE_USER_MEM_TYPE_GATTS_QUEUED_WRITES)
+        {
+            memset(queuedWriteMem, 0, sizeof(queuedWriteMem));
+            uint32_t err = sd_ble_user_mem_reply(p_ble_evt->evt.common_evt.conn_handle, &queuedWriteBlock);
+            if (err != NRF_SUCCESS)
+                nrfError = err;
+        }
+        break;
+
+    case BLE_GATTS_EVT_WRITE:
+        if (p_ble_evt->evt.gatts_evt.params.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_NOW)
+            onExecuteWrite(p_ble_evt->evt.gatts_evt.conn_handle);
+        break;
+
+    default:
+        break;
+    }
+
+    return MicroBitBLEService::onBleEvent(p_ble_evt);
+}
+
+void DeploiiService::onExecuteWrite(uint16_t connHandle)
+{
+    // The SoftDevice has applied the prepared writes to the attribute table (so to receiveBuffer).
+    // Check the queued-write memory to see whether our characteristic was written. Its layout is
+    // a list of [handle:2][offset:2][length:2][data:length] (little-endian), ended by handle 0.
+    uint16_t ours = valueHandle(IDX_RECEIVE);
+    bool found = false;
+    bool wellFormed = true;
+    size_t i = 0;
+
+    while (i + 2 <= sizeof(queuedWriteMem))
+    {
+        uint16_t handle = queuedWriteMem[i] | (queuedWriteMem[i + 1] << 8);
+        if (handle == BLE_GATT_HANDLE_INVALID)
+            break;
+        if (i + 6 > sizeof(queuedWriteMem))
+        {
+            wellFormed = false;
+            break;
+        }
+        uint16_t length = queuedWriteMem[i + 4] | (queuedWriteMem[i + 5] << 8);
+        i += 6 + length;
+        if (i > sizeof(queuedWriteMem))
+        {
+            wellFormed = false;
+            break;
+        }
+        if (handle == ours)
+            found = true;
+    }
+
+    // Only another characteristic was written: not for us
+    if (wellFormed && !found)
+        return;
+
+    // Read back the complete value, its length is the total length of the long write
+    uint8_t value[DEPLOII_BLE_BUFFER_MAX_SIZE];
+    ble_gatts_value_t v;
+    memset(&v, 0, sizeof(v));
+    v.len = sizeof(value);
+    v.offset = 0;
+    v.p_value = value;
+
+    uint32_t err = sd_ble_gatts_value_get(connHandle, ours, &v);
+    if (err != NRF_SUCCESS)
+    {
+        nrfError = err;
+        return;
+    }
+
+    queueMessage(value, v.len < sizeof(value) ? v.len : sizeof(value));
+}
+
+void DeploiiService::queueMessage(const uint8_t *data, uint16_t len)
+{
+    if (len == 0)
+        return;
+    if (len > DEPLOII_BLE_BUFFER_MAX_SIZE)
+        len = DEPLOII_BLE_BUFFER_MAX_SIZE;
+
+    target_disable_irq();
+    if (rxCount == DEPLOII_RX_QUEUE_SIZE)
+    {
+        rxDropped++;
+        target_enable_irq();
+        return;
+    }
+    uint8_t slot = (rxHead + rxCount) % DEPLOII_RX_QUEUE_SIZE;
+    memcpy(rxQueue[slot], data, len);
+    rxLength[slot] = len;
+    rxCount++;
+    target_enable_irq();
+
+    // One event per message: the TypeScript handler pops one message each time it runs
     MicroBitEvent(DEPLOII_ID, DEPLOII_EVT_DATA_RECEIVED);
+}
+
+bool DeploiiService::popMessage(uint8_t *dst, uint16_t *len)
+{
+    target_disable_irq();
+    if (rxCount == 0)
+    {
+        target_enable_irq();
+        return false;
+    }
+    *len = rxLength[rxHead];
+    memcpy(dst, rxQueue[rxHead], *len);
+    rxHead = (rxHead + 1) % DEPLOII_RX_QUEUE_SIZE;
+    rxCount--;
+    target_enable_irq();
+    return true;
 }
 
 #endif // DEPLOII_HAS_BLE

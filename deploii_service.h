@@ -57,10 +57,15 @@ class DeploiiService : public MicroBitBLEService
     int send(const uint8_t *data, size_t size);
 
     /*
-     * The last value Deploii wrote to the receive characteristic.
+     * Take the oldest complete message Deploii wrote to the receive characteristic.
+     * dst must hold DEPLOII_BLE_BUFFER_MAX_SIZE bytes.
+     * Returns false if no message is waiting.
+     * An event (DEPLOII_ID, DEPLOII_EVT_DATA_RECEIVED) is raised for every queued message.
      */
-    const uint8_t *receivedData() const { return receiveBuffer; }
-    uint16_t receivedLength() const { return receiveLength; }
+    bool popMessage(uint8_t *dst, uint16_t *len);
+
+    // Messages dropped because the receive queue was full
+    uint32_t droppedMessages() const { return rxDropped; }
 
     uint16_t uuid() const { return serviceUUID; }
     bool isReady() const { return ready; }
@@ -72,6 +77,9 @@ class DeploiiService : public MicroBitBLEService
     // MicroBitBLEService interface
     int characteristicCount() override { return IDX_COUNT; }
     MicroBitBLEChar *characteristicPtr(int idx) override { return &chars[idx]; }
+
+    // Handles BLE long writes (queued writes), then defers to MicroBitBLEService
+    bool onBleEvent(const microbit_ble_evt_t *p_ble_evt) override;
 
   protected:
     void onDataWritten(const microbit_ble_evt_write_t *params) override;
@@ -89,7 +97,16 @@ class DeploiiService : public MicroBitBLEService
     // Characteristic values live here (CODAL stores values in application memory)
     uint8_t sendBuffer[DEPLOII_BLE_BUFFER_MAX_SIZE];
     uint8_t receiveBuffer[DEPLOII_BLE_BUFFER_MAX_SIZE];
-    uint16_t receiveLength;
+
+    // Received messages waiting for TypeScript (filled from the BLE event handler)
+    uint8_t rxQueue[DEPLOII_RX_QUEUE_SIZE][DEPLOII_BLE_BUFFER_MAX_SIZE];
+    uint16_t rxLength[DEPLOII_RX_QUEUE_SIZE];
+    uint8_t rxHead;
+    uint8_t rxCount;
+    uint32_t rxDropped;
+
+    void queueMessage(const uint8_t *data, uint16_t len);
+    void onExecuteWrite(uint16_t connHandle);
 
     uint16_t serviceUUID;
     bool serviceAdded;

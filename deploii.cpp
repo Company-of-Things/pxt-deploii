@@ -2,6 +2,7 @@
 #include "deploii_config.h"
 #include "deploii_hash.h"
 #include "deploii_service.h"
+#include "deploii_decode.h"
 
 using namespace pxt;
 
@@ -68,6 +69,41 @@ int sendRaw(Buffer data) {
 #else
     (void)data;
     return DEPLOII_ERR_BLE_UNAVAILABLE;
+#endif
+}
+
+/*
+ * C++ side of deploii.onDataReceived() in main.ts.
+ * Runs the handler once for every message Deploii writes to the receive characteristic.
+ */
+//%
+void onDataReceived(Action handler) {
+    registerWithDal(DEPLOII_ID, DEPLOII_EVT_DATA_RECEIVED, handler);
+}
+
+/*
+ * C++ side of deploii.receiveMessage() in main.ts.
+ * Takes the oldest received message and decodes it into
+ * [moduleId, data, cardId, type, protocol], or returns undefined if there is
+ * no message or it isn't valid MessagePack.
+ */
+//%
+RefCollection *receiveMessage() {
+#if DEPLOII_HAS_BLE
+    if (service == NULL)
+        return NULL;
+
+    uint8_t message[DEPLOII_BLE_BUFFER_MAX_SIZE];
+    uint16_t length;
+    if (!service->popMessage(message, &length))
+        return NULL;
+
+    RefCollection *decoded = deploii_decode_message(message, length);
+    if (decoded == NULL)
+        DEPLOII_LOG("[deploii] could not decode a %d byte message\r\n", (int)length);
+    return decoded;
+#else
+    return NULL;
 #endif
 }
 
